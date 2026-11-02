@@ -116,3 +116,10 @@ LinkedIn: [Connect with me](https://www.linkedin.com/in/lipsita-tripathy-b2b1972
 ---
 
 *BookFlix — Stories begin here.*
+## 🎬 Application Preview
+
+### BookFlix Intro
+![BookFlix Intro](screenshots/intro.png)
+
+### BookFlix Homepage
+![BookFlix Homepage](screenshots/homepage.png)
