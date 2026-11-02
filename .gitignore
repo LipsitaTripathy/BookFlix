@@ -1,0 +1,23 @@
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Personal reader data
+profile.json
+reading_list.json
+reviews.json
+
+# Environment variables and secrets
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
