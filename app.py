@@ -7,6 +7,16 @@ import json
 from pathlib import Path
 from datetime import datetime
 from utils.recommendations import recommend_books
+from utils.auth import sign_up, sign_in, sign_out
+from utils.database import (
+    get_profile,
+    save_profile as save_profile_db,
+    get_reading_list,
+    add_reading_list_book,
+    remove_reading_list_book,
+    get_reviews,
+    add_review as add_review_db,
+)
 
 
 # ---------------- PAGE CONFIGURATION ----------------
@@ -20,9 +30,96 @@ st.set_page_config(
 
 # ---------------- FILE PATHS ----------------
 
-READING_LIST_FILE = Path("reading_list.json")
-REVIEWS_FILE = Path("reviews.json")
-PROFILE_FILE = Path("profile.json")
+# Reviews, profiles and reading lists are stored in Supabase.
+# Existing reviews.json is left untouched as a local backup.
+
+
+# ---------------- AUTHENTICATION ----------------
+
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+
+if st.session_state.auth_user is None:
+    st.title("📚 BOOKFLIX")
+    st.subheader("Discover stories. Find your next favourite.")
+
+    login_tab, signup_tab = st.tabs(["Login", "Create Account"])
+
+    with login_tab:
+        st.markdown("### Welcome back!")
+        with st.form("bookflix_login_form"):
+            email = st.text_input("Email address", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            submitted = st.form_submit_button("Login", use_container_width=True)
+
+        if submitted:
+            try:
+                response = sign_in(email.strip(), password)
+                if response.user:
+                    st.session_state.auth_user = response.user
+                    st.rerun()
+                st.error("Login could not be completed. Please try again.")
+            except Exception:
+                st.error("Login failed. Check your email and password, and make sure your email is confirmed.")
+
+    with signup_tab:
+        st.markdown("### Join BookFlix!")
+        with st.form("bookflix_signup_form"):
+            display_name = st.text_input("Display name", key="signup_display_name")
+            signup_email = st.text_input("Email address", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_password")
+            submitted = st.form_submit_button("Create Account", use_container_width=True)
+
+        if submitted:
+            if not display_name.strip() or not signup_email.strip() or not signup_password:
+                st.warning("Please complete all fields.")
+            elif len(signup_password) < 6:
+                st.warning("Password must contain at least 6 characters.")
+            else:
+                try:
+                    response = sign_up(signup_email.strip(), signup_password, display_name.strip())
+                    if response.session and response.user:
+                        st.session_state.auth_user = response.user
+                        st.rerun()
+                    elif response.user:
+                        st.success("Account created. Check your email to confirm your account, then log in.")
+                    else:
+                        st.info("If registration was accepted, check your email for confirmation instructions.")
+                except Exception:
+                    st.error("Account creation failed. Check the details or try another email address.")
+
+    st.stop()
+
+
+# ---------------- SIGNED-IN READER DATA ----------------
+
+current_user_id = str(st.session_state.auth_user.id)
+
+if st.session_state.get("profile_user_id") != current_user_id:
+    try:
+        profile_row = get_profile(current_user_id)
+        if profile_row:
+            reader_name = str(profile_row.get("display_name") or "")
+        else:
+            metadata = getattr(st.session_state.auth_user, "user_metadata", None) or {}
+            reader_name = str(metadata.get("display_name") or "")
+            if reader_name:
+                save_profile_db(current_user_id, reader_name)
+        st.session_state.profile = {"name": reader_name}
+        st.session_state.profile_user_id = current_user_id
+    except Exception as error:
+        st.error("Could not load your profile from Supabase.")
+        st.code(str(error))
+        st.stop()
+
+if st.session_state.get("reading_list_user_id") != current_user_id:
+    try:
+        st.session_state.reading_list = get_reading_list(current_user_id)
+        st.session_state.reading_list_user_id = current_user_id
+    except Exception as error:
+        st.error("Could not load your reading list from Supabase.")
+        st.code(str(error))
+        st.stop()
 
 
 # ---------------- SESSION STATE ----------------
@@ -34,109 +131,86 @@ if "intro_shown" not in st.session_state:
     st.session_state.intro_shown = False
 
 
-# ---------------- PROFILE FUNCTIONS ----------------
-
-def load_profile():
-
-    if not PROFILE_FILE.exists():
-        return {"name": ""}
-
-    try:
-        with open(PROFILE_FILE, "r", encoding="utf-8") as file:
-            profile = json.load(file)
-
-        if isinstance(profile, dict):
-            return {"name": str(profile.get("name", ""))}
-
-        return {"name": ""}
-
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return {"name": ""}
-
-
 def save_profile(name):
-
-    profile = {"name": name.strip()}
-
-    with open(PROFILE_FILE, "w", encoding="utf-8") as file:
-        json.dump(profile, file, indent=4, ensure_ascii=False)
-
-    st.session_state.profile = profile
-
-
-if "profile" not in st.session_state:
-    st.session_state.profile = load_profile()
+    """Save this reader's display name to their Supabase profile."""
+    clean_name = name.strip()
+    save_profile_db(current_user_id, clean_name)
+    st.session_state.profile = {"name": clean_name}
 
 
 # ---------------- READING LIST FUNCTIONS ----------------
 
-def load_reading_list():
-
-    if not READING_LIST_FILE.exists():
-        return []
-
-    try:
-        with open(READING_LIST_FILE, "r", encoding="utf-8") as file:
-            saved_books = json.load(file)
-
-        return [int(book_id) for book_id in saved_books]
-
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return []
-
-
-def save_reading_list(book_ids):
-
-    with open(READING_LIST_FILE, "w", encoding="utf-8") as file:
-        json.dump(book_ids, file, indent=4)
-
-
-if "reading_list" not in st.session_state:
-    st.session_state.reading_list = load_reading_list()
-
-
 def add_to_reading_list(book_id):
-
     book_id = int(book_id)
-
     if book_id not in st.session_state.reading_list:
+        add_reading_list_book(current_user_id, book_id)
         st.session_state.reading_list.append(book_id)
-        save_reading_list(st.session_state.reading_list)
 
 
 def remove_from_reading_list(book_id):
-
     book_id = int(book_id)
-
     if book_id in st.session_state.reading_list:
+        remove_reading_list_book(current_user_id, book_id)
         st.session_state.reading_list.remove(book_id)
-        save_reading_list(st.session_state.reading_list)
+
+
+# ---------------- LOGOUT ----------------
+
+with st.sidebar:
+    st.caption(f"Signed in as {st.session_state.profile.get('name') or 'Reader'}")
+    if st.button("Logout", use_container_width=True):
+        try:
+            sign_out()
+        finally:
+            for state_key in (
+                "auth_user", "profile", "profile_user_id",
+                "reading_list", "reading_list_user_id",
+                "selected_book", "intro_shown", "page"
+            ):
+                st.session_state.pop(state_key, None)
+            st.rerun()
 
 
 # ---------------- RATING AND REVIEW FUNCTIONS ----------------
 
 def load_reviews():
-
-    if not REVIEWS_FILE.exists():
-        return []
-
+    """Load public book reviews from Supabase."""
     try:
-        with open(REVIEWS_FILE, "r", encoding="utf-8") as file:
-            reviews = json.load(file)
+        rows = get_reviews()
+        normalized_reviews = []
 
-        if isinstance(reviews, list):
-            return reviews
+        for row in rows:
+            created_at = row.get("created_at")
+            display_date = "Date unavailable"
 
+            if created_at:
+                try:
+                    parsed_date = datetime.fromisoformat(
+                        str(created_at).replace("Z", "+00:00")
+                    )
+                    display_date = parsed_date.astimezone().strftime(
+                        "%d %B %Y, %I:%M %p"
+                    )
+                except (ValueError, TypeError):
+                    display_date = str(created_at)
+
+            normalized_reviews.append({
+                "id": row.get("id"),
+                "user_id": row.get("user_id"),
+                "book_id": int(row.get("book_id")),
+                "name": row.get("reviewer_name") or "Reader",
+                "rating": int(row.get("rating", 0)),
+                "review": row.get("review_text") or "",
+                "date": display_date,
+                "created_at": created_at,
+            })
+
+        return normalized_reviews
+
+    except Exception as error:
+        st.error("Could not load reader reviews from Supabase.")
+        st.code(str(error))
         return []
-
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return []
-
-
-def save_reviews(reviews):
-
-    with open(REVIEWS_FILE, "w", encoding="utf-8") as file:
-        json.dump(reviews, file, indent=4, ensure_ascii=False)
 
 
 if "reviews" not in st.session_state:
@@ -144,26 +218,25 @@ if "reviews" not in st.session_state:
 
 
 def add_review(book_id, rating, review_text):
-
+    """Save the signed-in reader's review to Supabase."""
     reviewer_name = st.session_state.profile.get("name", "").strip()
 
     if not reviewer_name:
         reviewer_name = "Reader"
 
-    new_review = {
-        "book_id": int(book_id),
-        "name": reviewer_name,
-        "rating": int(rating),
-        "review": review_text.strip(),
-        "date": datetime.now().strftime("%d %B %Y, %I:%M %p")
-    }
+    add_review_db(
+        user_id=current_user_id,
+        book_id=int(book_id),
+        reviewer_name=reviewer_name,
+        rating=int(rating),
+        review_text=review_text.strip(),
+    )
 
-    st.session_state.reviews.append(new_review)
-    save_reviews(st.session_state.reviews)
+    # Refresh so the newly saved database row is displayed immediately.
+    st.session_state.reviews = load_reviews()
 
 
 def get_book_reviews(book_id):
-
     return [
         review
         for review in st.session_state.reviews
@@ -172,7 +245,6 @@ def get_book_reviews(book_id):
 
 
 def get_review_statistics(book_id):
-
     book_reviews = get_book_reviews(book_id)
 
     if not book_reviews:
@@ -940,7 +1012,7 @@ elif page == "MY PROFILE":
     my_reviews = [
         review
         for review in st.session_state.reviews
-        if review.get("name", "") == current_name and current_name
+        if review.get("user_id") == current_user_id
     ]
 
     average_given = 0
