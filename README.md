@@ -5,6 +5,17 @@ A Netflix-inspired book discovery and recommendation platform built using Python
 
 BookFlix helps readers explore books, discover similar titles and maintain a personalised reading collection through an interactive interface.
 
+## 🚀 Live Demo
+
+Experience BookFlix here:
+
+**[🌐 Visit BookFlix](https://bookflix-lipsita.streamlit.app/)**
+
+Explore books, discover recommendations, create your reading list,
+and share ratings and reviews.
+
+**[View Source Code](https://github.com/LipsitaTripathy/BookFlix)**
+
 ## ✨ Features
 
 - **Book Discovery:** Browse a collection of books with cover images and descriptions.
