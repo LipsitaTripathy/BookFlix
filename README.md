@@ -107,12 +107,20 @@ The application will open in your browser at:
 
 ## 🚀 Future Improvements
 
+- Expand the book dataset to provide a wider range of titles and genres.
+- Enhance recommendation techniques for more relevant book suggestions.
+- Improve reading analytics and personalised discovery.
+- Add more advanced filtering and sorting options.
+- Further refine the user experience and interface.
+
+✅ Implemented Features
+
 - Multi-user authentication and individual reader accounts.
-- Cloud database integration.
-- Personalised reading lists across devices.
-- Improved recommendation techniques.
-- Expanded book dataset.
-- Online deployment.
+- Supabase cloud database integration.
+- Personalised reading lists stored across sessions.
+- User profiles and reading activity statistics.
+- Ratings and reviews with database integration.
+- Online deployment using Streamlit Community Cloud.
 
 ## 👩‍💻 Developer
 
